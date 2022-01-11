@@ -22,6 +22,9 @@ type CreateCmd struct {
 	Cmd *cobra.Command
 
 	forceRefresh bool
+	integration  string
+	client       string
+	server       string
 }
 
 // NewCreateCmd creates and returns a create command for samples
@@ -29,6 +32,9 @@ func NewCreateCmd(config *config.Config) *CreateCmd {
 	createCmd := &CreateCmd{
 		cfg:          config,
 		forceRefresh: false,
+		integration:  "",
+		client:       "",
+		server:       "",
 	}
 	createCmd.Cmd = &cobra.Command{
 		Use:   "create <sample> [destination]",
@@ -43,6 +49,9 @@ local configuration to let you get started faster.`,
 	}
 
 	createCmd.Cmd.Flags().BoolVar(&createCmd.forceRefresh, "force-refresh", false, "Forcefully refresh the local samples cache")
+	createCmd.Cmd.Flags().StringVar(&createCmd.integration, "integration", "", "Preselect the integration")
+	createCmd.Cmd.Flags().StringVar(&createCmd.client, "client", "", "Preselect the client")
+	createCmd.Cmd.Flags().StringVar(&createCmd.server, "server", "", "Preselect the server")
 
 	return createCmd
 }
@@ -76,7 +85,7 @@ func (cc *CreateCmd) runCreateCmd(cmd *cobra.Command, args []string) error {
 	// directory, the user needs to select which integration they
 	// want to work with (if selectedSamplelicable) and which language they
 	// want to copy
-	selectedConfig, err := promptSampleConfig(sampleConfig)
+	selectedConfig, err := cc.promptSampleConfig(sampleConfig)
 	if err != nil {
 		return err
 	}
@@ -127,11 +136,11 @@ func (cc *CreateCmd) runCreateCmd(cmd *cobra.Command, args []string) error {
 
 // promptSampleConfig prompts the user to select the integration they want to use
 // (if available) and the language they want the integration to be.
-func promptSampleConfig(sampleConfig *samples.SampleConfig) (*samples.SelectedConfig, error) {
+func (cc *CreateCmd) promptSampleConfig(sampleConfig *samples.SampleConfig) (*samples.SelectedConfig, error) {
 	var selectedConfig samples.SelectedConfig
 
 	if sampleConfig.HasIntegrations() {
-		integration, err := integrationSelectPrompt(sampleConfig)
+		integration, err := integrationSelectPrompt(sampleConfig, cc.integration)
 		if err != nil {
 			return nil, err
 		}
@@ -141,7 +150,7 @@ func promptSampleConfig(sampleConfig *samples.SampleConfig) (*samples.SelectedCo
 	}
 
 	if selectedConfig.Integration.HasMultipleClients() {
-		client, err := clientSelectPrompt(selectedConfig.Integration.Clients)
+		client, err := clientSelectPrompt(selectedConfig.Integration.Clients, cc.client)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +160,7 @@ func promptSampleConfig(sampleConfig *samples.SampleConfig) (*samples.SelectedCo
 	}
 
 	if selectedConfig.Integration.HasMultipleServers() {
-		server, err := serverSelectPrompt(selectedConfig.Integration.Servers)
+		server, err := serverSelectPrompt(selectedConfig.Integration.Servers, cc.server)
 		if err != nil {
 			return nil, err
 		}
@@ -163,7 +172,16 @@ func promptSampleConfig(sampleConfig *samples.SampleConfig) (*samples.SelectedCo
 	return &selectedConfig, nil
 }
 
-func selectOptions(template, label string, options []string) (string, error) {
+func selectOptions(template, label string, options []string, fromFlag string) (string, error) {
+	if fromFlag != "" {
+		for _, option := range options {
+			if option == fromFlag {
+				return option, nil
+			}
+		}
+		return "", fmt.Errorf("'%s' is not a valid value in %v", fromFlag, options)
+	}
+
 	color := ansi.Color(os.Stdout)
 
 	templates := &promptui.SelectTemplates{
@@ -184,8 +202,8 @@ func selectOptions(template, label string, options []string) (string, error) {
 	return result, nil
 }
 
-func clientSelectPrompt(clients []string) (string, error) {
-	selected, err := selectOptions("client", "Which client would you like to use", clients)
+func clientSelectPrompt(clients []string, fromFlag string) (string, error) {
+	selected, err := selectOptions("client", "Which client would you like to use", clients, fromFlag)
 	if err != nil {
 		return "", err
 	}
@@ -193,8 +211,8 @@ func clientSelectPrompt(clients []string) (string, error) {
 	return selected, nil
 }
 
-func integrationSelectPrompt(sc *samples.SampleConfig) (*samples.SampleConfigIntegration, error) {
-	selected, err := selectOptions("integration", "What type of integration would you like to use", sc.IntegrationNames())
+func integrationSelectPrompt(sc *samples.SampleConfig, fromFlag string) (*samples.SampleConfigIntegration, error) {
+	selected, err := selectOptions("integration", "What type of integration would you like to use", sc.IntegrationNames(), fromFlag)
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +228,8 @@ func integrationSelectPrompt(sc *samples.SampleConfig) (*samples.SampleConfigInt
 	return selectedIntegration, nil
 }
 
-func serverSelectPrompt(servers []string) (string, error) {
-	selected, err := selectOptions("server", "What server would you like to use", servers)
+func serverSelectPrompt(servers []string, fromFlag string) (string, error) {
+	selected, err := selectOptions("server", "What server would you like to use", servers, fromFlag)
 	if err != nil {
 		return "", err
 	}
